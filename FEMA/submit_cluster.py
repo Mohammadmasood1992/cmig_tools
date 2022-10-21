@@ -12,6 +12,17 @@ from pathlib import Path
 import logging
 import re
 
+IMAGING_TYPE_DICT = {
+    "thickness": {
+        "3.0": "thickness-sm{sm}",
+        "4.0": "thickness_ic5_sm{sm}"
+    },
+    "area": {
+        "3.0": "area-sm{sm}",
+        "4.0": "area_ic5_sm{sm}"
+    }
+}
+
 class Analysis:
     """Analysis class"""
     def __init__(self,
@@ -33,7 +44,6 @@ class Analysis:
         self.design_matrix = design_matrix.absolute()
         self.datatype = datatype
         self.modality = modality
-        self.fstem_imaging = fstem_imaging
         self.colsinterest = colsinterest           # Columns in design matrix to loop over to calculate TFCE - selecting columns of interest improves efficiency - is `isempty(tfce_cols)` FEMA_wrapper will NOT run TFCE
         self.contrasts = contrasts                 # Contrasts relate to columns in design matrix e.g. [1 -1] will take the difference between cols 1 and 2 in your design matrix (X)
         self.ranknorm = ranknorm                   # Rank normalizes dependent variables (Y) (default = 0)
@@ -44,6 +54,11 @@ class Analysis:
         self.ico = ico
         self.smoothing_factor = smoothing_factor
         self.data_release = data_release
+        # If vertex & smri analysis, construct fstem_imaging, otherwise, use as is.
+        if self.datatype == 'vertex' and self.modality == 'smri':
+            self.fstem_imaging = IMAGING_TYPE_DICT[fstem_imaging][self.data_release].format(sm=self.smoothing_factor)
+        else:
+            self.fstem_imaging = fstem_imaging
 
     def recap(self):
         """Create string with main parameters"""
@@ -217,6 +232,8 @@ class Matlab:
     def create_command(self):
         """Create matlab command as string"""
         def add_value(mystr:str, value) -> str:
+            if isinstance(value, bool):
+                value = int(value)
             if isinstance(value, (int, float)) or str(value).startswith(('{', '[')):
                 mystr += str(f"{value},")
             else:
@@ -231,18 +248,6 @@ class Matlab:
             mystr += str(f"'{key}',")
             mystr = add_value(mystr, value)
         return mystr.rstrip(',') + ');'
-
-
-IMAGING_TYPE_DICT = {
-    "thickness": {
-        "3.0": "thickness-sm{sm}",
-        "4.0": "thickness_ic5_sm{sm}"
-    },
-    "area": {
-        "3.0": "area-sm{sm}",
-        "4.0": "area_ic5_sm{sm}"
-    }
-}
 
 def check_repos(code_dir:Path):
     """Checking if the repos needed are present"""
@@ -281,7 +286,8 @@ def main(analysis_args:Analysis,
          outdir:Path,
          cluster:str,
          mem_free:float,
-         run_time:str):
+         run_time:str,
+         light_save:bool):
     """Main function"""
     job_dir = outdir /  f'nperms-{nperms}_{analysis_args.recap()}'
     tmp_dir = job_dir / 'tmp'
@@ -296,11 +302,6 @@ def main(analysis_args:Analysis,
     pihat_path = analysis_args.get_genetics(abcd_sync)
 
     imaging_dir = set_imaging_dir(abcd_sync, analysis_args)
-    # If vertex & smri analysis, construct fstem_imaging, otherwise, use as is.
-    if analysis_args.datatype == 'vertex' and analysis_args.modality == 'smri':
-        fstem_imaging = IMAGING_TYPE_DICT[analysis_args.fstem_imaging][analysis_args.data_release].format(sm=analysis_args.smoothing_factor)
-    else:
-        fstem_imaging = analysis_args.fstem_imaging
 
     my_queue = Queue(cluster=cluster, mem_free=mem_free, run_time=run_time)
 
@@ -311,8 +312,8 @@ def main(analysis_args:Analysis,
         logging.info(f"Starting {job_nperms} permutations ({k}/{n_jobs}).")
         FEMA_wrapper = Matlab(
             'FEMA_wrapper',
-            fstem_imaging, analysis_args.design_matrix, tmp_dir/str(k), tabulated_data_dir,
-            imaging_dir, analysis_args.datatype,
+            analysis_args.fstem_imaging, analysis_args.design_matrix, tmp_dir/str(k),
+            tabulated_data_dir, imaging_dir, analysis_args.datatype,
             **{
                 'ico': analysis_args.ico,
                 'ranknorm': analysis_args.ranknorm,
@@ -324,6 +325,7 @@ def main(analysis_args:Analysis,
                 'tfce': analysis_args.tfce,
                 'pihat_file': pihat_path,
                 'nperms': job_nperms,
+                'lightSave': light_save
             }
         ).create_command()
         logging.debug(f"matlab_command={FEMA_wrapper}")
@@ -428,6 +430,11 @@ def parse_args():
         required=False)
     
     parse_submission = parser.add_argument_group('Cluster info', 'arguments relevant to the cluster submission')
+    parse_submission.add_argument('--light_save',
+        type=bool,
+        action=argparse.BooleanOptionalAction,
+        help='Whether to only save permutation data to save disk storage',
+        default=False)
     parse_submission.add_argument('--nperms','-n',
         type=int,
         help='Number of permutations to perform',
@@ -491,7 +498,8 @@ def parse_args():
         args.outdir.absolute(),
         args.cluster,
         args.mem_free,
-        args.run_time
+        args.run_time,
+        args.light_save
     )
 
 

@@ -164,8 +164,13 @@ if 0 % Old 2D version
   sig2gridl = cat(2,tmpmat1l(:),tmpmat2l(:));
   sig2gridu = cat(2,tmpmat1u(:),tmpmat2u(:));
 else % New ND version
-  sig2gridl = ndgrid_amd(repmat({binvals_edges(1:end-1)},[1 length(RandomEffects)-1]));
-  sig2gridu = ndgrid_amd(repmat({binvals_edges(2:end)},[1 length(RandomEffects)-1]));
+  if length(RandomEffects)==2
+    sig2gridl = colvec(binvals_edges(1:end-1));
+    sig2gridu = colvec(binvals_edges(2:end));
+  else
+    sig2gridl = ndgrid_amd(repmat({binvals_edges(1:end-1)},[1 length(RandomEffects)-1]));
+    sig2gridu = ndgrid_amd(repmat({binvals_edges(2:end)},[1 length(RandomEffects)-1]));
+  end
 end
 ivec_tmp = find(sum(sig2gridl,2)<=1); % Get rid of "impossible" bins
 sig2gridl = sig2gridl(ivec_tmp,:);
@@ -287,6 +292,9 @@ for coli_ri=1:ncols_ri
                         nseg = 1;
                   end
 
+                  sig2mat_save = sig2mat; % Ugly hack to save resampled random effects estimates
+                  sig2tvec_save = sig2tvec;
+                  binvec_save = binvec;
                   if permi>0 
                         sig2tvec = sig2tvec_bak;
                         sig2mat = sig2mat_bak;
@@ -359,8 +367,10 @@ for coli_ri=1:ncols_ri
                   beta_hat_perm(:,:,permi+1) = beta_hat;
                   beta_se_perm(:,:,permi+1) = beta_se;
                   zmat_perm(:,:,permi+1) = zmat;
-                  sig2mat_perm(:,:,permi+1) = sig2mat;
-                  sig2tvec_perm(:,:,permi+1) = sig2tvec;
+%                  sig2mat_perm(:,:,permi+1) = sig2mat;
+%                  sig2tvec_perm(:,:,permi+1) = sig2tvec;
+                  sig2mat_perm(:,:,permi+1) = sig2mat_save;
+                  sig2tvec_perm(:,:,permi+1) = sig2tvec_save;
                   if ~isempty(logLikvec)
                         logLikvec_perm(:,:,permi+1) = logLikvec;
                   end
