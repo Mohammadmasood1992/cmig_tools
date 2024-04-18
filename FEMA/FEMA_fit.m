@@ -937,7 +937,7 @@ elseif nperms == 0
 end
 
 zmat    = double(beta_hat) ./ double(beta_se); %CHECK WITH ANDERS
-logpmat = (1-normcdf(abs(zmat)));
+logpmat = log10(1-normcdf(abs(zmat)));
 
 if ciflag
     sig2mat = cat(3, sig2mat, sig2mat_ci);
